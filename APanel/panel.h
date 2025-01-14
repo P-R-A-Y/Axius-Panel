@@ -11,6 +11,10 @@ extern AxiusSSD axius;
 #include "BigNums.h"
 #include <TimeLib.h>
 #include <globalstructures.h>
+#include <vector>
+#include <SimpleDHT.h>
+
+#define VLANPorts 3
 
 extern "C" {
   #include "user_interface.h"
@@ -22,7 +26,7 @@ extern "C" {
 
 class Panel : public Mod {
 public:
-  Panel() : timeClient(ntpUDP, "europe.pool.ntp.org", 3600*3, 300000), customIP(192, 168, 0, 80) {};
+  Panel() : timeClient(ntpUDP, "europe.pool.ntp.org", 3600*3, 300000), customIP(192, 168, 0, 80), dht11(D4) {};
   void tick() override;
   void firsttick() override {
     axius.showStatusBar = false;
@@ -37,6 +41,7 @@ public:
 private:
   WiFiUDP ntpUDP;
   NTPClient timeClient;
+  SimpleDHT11 dht11;
   //web
   const char* serverIP = "http://192.168.0.72";
 
@@ -47,7 +52,17 @@ private:
   int httpCode = 0;
   String payload;
   StaticJsonDocument<300> doc;
+  StaticJsonDocument<10240> docRouter;
+  std::vector<int> routerTrafficData;
   String total_memory, free_memory, used_memory, disk_total, disk_free, disk_used;
+
+  String jsonParseError;
+  float maxSumbyte = 0;
+  uint32_t lastRouterRequest = 0;
+
+  bool hasIP = false;
+  uint32_t uptime = 0;
+  String ip4, ip6, mac, ipv4Status, ipv6Status;
 
   uint8_t customMac[6] = {0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA};
   IPAddress customIP;
@@ -55,8 +70,8 @@ private:
   String week[7] = {"SU", "MO", "TU", "WE", "TH", "FR", "SA"};
   String months[12] = {"January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"};
 
-
-
+  uint8_t temperature, humidity;
+  String STemperature, SHumidity;
 
 
 public:
@@ -117,5 +132,28 @@ public:
       }
     }
     return 0;
+  }
+
+  String formatTime(uint32_t seconds) {
+    uint32_t secondsLeft = seconds % 60;      // Остаток секунд
+    uint32_t totalMinutes = seconds / 60;
+
+    uint32_t minutes = totalMinutes % 60;    // Остаток минут
+    uint32_t totalHours = totalMinutes / 60;
+
+    uint32_t hours = totalHours % 24;        // Остаток часов
+    uint32_t totalDays = totalHours / 24;
+
+    uint32_t days = totalDays % 30;          // Остаток дней (условно 30 дней в месяце)
+    uint32_t months = totalDays / 30;        // Месяцы (условно)
+
+    String result = "";
+    if (months > 0) result += "M" + String(months) + " ";
+    if (days > 0) result += "D" + String(days) + " ";
+    if (hours > 0) result += "H" + String(hours) + " ";
+    if (minutes > 0) result += "M" + String(minutes) + " ";
+    if (secondsLeft > 0) result += "S" + String(secondsLeft) + " ";
+
+    return result;
   }
 };
