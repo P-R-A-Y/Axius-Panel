@@ -1,7 +1,4 @@
-#include <Arduino.h>
-
 #include <AxiusSSD.h>
-extern AxiusSSD axius;
 
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
@@ -10,7 +7,6 @@ extern AxiusSSD axius;
 #include <ArduinoJson.h>
 #include "BigNums.h"
 #include <TimeLib.h>
-#include <globalstructures.h>
 #include <vector>
 #include <SimpleDHT.h>
 
@@ -24,26 +20,26 @@ extern "C" {
   int  wifi_send_pkt_freedom(uint8 *buf, int len, bool sys_seq);
 }
 
-class Panel : public Mod {
+class Dashboard : public Mod {
 public:
-  Panel() : timeClient(ntpUDP, "europe.pool.ntp.org", 3600*3, 300000), customIP(192, 168, 0, 80), dht11(D4) {};
+  Dashboard(AxiusSSD* axiusInstance) : Mod(axiusInstance, 0xF0F0), timeClient(ntpUDP, "europe.pool.ntp.org", 3600*3, 600000), customIP(192, 168, 0, 80), dht11(D4) {};
   void tick() override;
   void firsttick() override {
-    axius.showStatusBar = false;
-    axius.stopPacketListening();
-    wifi_promiscuous_enable(false);
-    wifi_fpm_close();
-    wifi_set_opmode(STATION_MODE);
-    wifi_station_disconnect();
+    axius->showStatusBar = false;
+    axius->reverseWIFIBackToNormalMode();
+    axius->minimalStatusBar = true;
+    axius->setContrast(0);
+    axius->display.dim(false);
+    axius->MGR.setParameterByte("deviceId", 255);
   };
   void setup() override {};
-  String getName() override {return "panel_main_screen_mod1";}
+  String getName() override {return "Dashboard_main_screen_mod1";}
 private:
   WiFiUDP ntpUDP;
   NTPClient timeClient;
   SimpleDHT11 dht11;
   //web
-  const char* serverIP = "http://192.168.0.72";
+  String serverIP = "http://192.168.0.72:3005";
 
   uint8_t state = 0, substate = 0, wifiConnectAttempt = 0, loopState = 0;
   uint32_t connectTimeout = 0, loopingTimeout = 0;
@@ -51,8 +47,7 @@ private:
 
   int httpCode = 0;
   String payload;
-  StaticJsonDocument<300> doc;
-  StaticJsonDocument<10240> docRouter;
+  StaticJsonDocument<10240> sharedBuffer;
   std::vector<int> routerTrafficData;
   String total_memory, free_memory, used_memory, disk_total, disk_free, disk_used;
 
@@ -73,19 +68,35 @@ private:
   uint8_t temperature, humidity;
   String STemperature, SHumidity;
 
+  const String minecraftServerIP = "192.168.0.72";
+  const uint16_t minecraftServerPORT = 25565;
+  std::vector<String> players {};
+  uint16_t maxPlayers = 0, curPlayers = 0;
+  String MOTDName;
+  int MCServerPingError = 0; // 0 - success, 1 - timeout, 2 - broken data, 3 - fatal error
+  String strversion;
+
 
 public:
-  String convertUnits(uint32_t bytes) {
+  void timeIcon() {
+    char formattedTime[6];
+    sprintf(formattedTime, "%02d:%02d", hour(), minute());
+    String timeAndDateShort = String(formattedTime)+(day()<9?" 0":" ")+String(day())+(month()<9?".0":".")+String(month())+"."+String(year());
+    axius->display.setCursor(40, 8);
+    axius->display.print(timeAndDateShort);
+  }
+
+  String convertUnits(uint64_t bytes) {
     if (bytes >= 1099511627776) { // 1 TB
-      return String(bytes / 1099511627776.0, 2) + "T";
+      return uint64_tToString(bytes / uint64_t(1099511627776)) + "Tb";
     } else if (bytes >= 1073741824) { // 1 GB
-      return String(bytes / 1073741824.0, 2) + "G";
+      return uint64_tToString(bytes / uint64_t(1073741824)) + "Gb";
     } else if (bytes >= 1048576) { // 1 MB
-      return String(bytes / 1048576.0, 2) + "M";
+      return uint64_tToString(bytes / uint64_t(1048576)) + "Mb";
     } else if (bytes >= 1024) { // 1 KB
-      return String(bytes / 1024.0, 2) + "K";
+      return uint64_tToString(bytes / uint64_t(1024.0)) + "Kb";
     } else {
-      return String(bytes) + "B";
+      return uint64_tToString(bytes) + "B";
     }
   }
 
@@ -115,7 +126,7 @@ public:
   uint16_t getTextWidth(String text) {
     int16_t buff;
     uint16_t textWidth, ubuff;
-    axius.display.getTextBounds(text, 0, 0, &buff, &buff, &textWidth, &ubuff);
+    axius->display.getTextBounds(text, 0, 0, &buff, &buff, &textWidth, &ubuff);
     return textWidth;
   }
 
